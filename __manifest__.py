@@ -6,7 +6,10 @@
     "author": "Ecosoft, Odoo Community Association (OCA)",
     "website": "https://github.com/kittiu/push_to_frappe",
     "license": "AGPL-3",
-    "depends": ["base", "web"],
+    "depends": [
+        "sale",
+        "account",
+    ],
     "data": [
         "data/server_actions.xml",
     ],

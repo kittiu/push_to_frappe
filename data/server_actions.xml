@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<odoo>
+<odoo noupdate="1">
     <record id="action_push_sales_order_to_frappe" model="ir.actions.server">
         <field name="name">Send SO to Frappe Server</field>
         <field name="model_id" ref="sale.model_sale_order"/>
@@ -7,24 +7,64 @@
         <field name="state">code</field>
         <field name="code">
 target_doctype = 'Sales Order'
+
+# Create term and conditions for all docs
+notes = {}
+for doc in records:
+    note = '\n'.join(doc.order_line.filtered("display_type").mapped("name"))  # ["x", "y"]
+    notes.update({doc.id: note})
+
 target_docs = [{
-  'custom_odoo_ref': doc.name,
-  'customer': doc.partner_id.name,
-  'date': doc.date_order.strftime('%Y-%m-%d'),
-  'delivery_date': doc.commitment_date and doc.commitment_date.strftime('%Y-%m-%d') or doc.date_order.strftime('%Y-%m-%d'),
-  'items': [
+    'odoo_ref': '%s,%s,%s' % (doc._name, doc.id, doc.name),  # Required
+    'customer': doc.partner_id.name,
+    'transaction_date': doc.date_order.strftime('%Y-%m-%d'),
+    'delivery_date': doc.commitment_date and doc.commitment_date.strftime('%Y-%m-%d') or doc.date_order.strftime('%Y-%m-%d'),
+    'payment_terms_template': doc.payment_term_id.name,
+    'items': [
     {
-      'item_code': l.product_id.default_code,
-      'item_name': l.product_id.name,
-      'description': l.name,
-      'qty': l.product_uom_qty,
-      'rate': l.price_unit,
-    } for l in doc.order_line
-  ]
+        'item_code': l.product_id.name,
+        'description': l.name,
+        'qty': l.product_uom_qty,
+        'rate': l.price_unit
+    } for l in doc.order_line.filtered(lambda l: not l.display_type)
+    ],
+    'taxes_and_charges': doc.order_line.tax_id and doc.order_line.tax_id.name or '',
+    'terms': notes[doc.id]+doc.note and (notes[doc.id]+doc.note).replace('\n', '&lt;br&gt;') or '',
 } for doc in records]
 
-
-action = env['push.to.frappe'].push(target_doctype, target_docs)
+action = env['push.to.frappe'].push(target_doctype, target_docs, push_file=False)
         </field>
     </record>
+
+
+    <record id="action_push_cust_invoice_to_frappe" model="ir.actions.server">
+        <field name="name">Send Cust Invoice to Frappe Server</field>
+        <field name="model_id" ref="account.model_account_move"/>
+        <field name="binding_model_id" ref="account.model_account_move"/>
+        <field name="state">code</field>
+        <field name="code">
+target_doctype = 'Sales Invoice'
+target_docs = [{
+    'odoo_ref': '%s,%s,%s' % (doc._name, doc.id, doc.name),  # Required
+    'customer': doc.partner_id.name,
+    'date': doc.invoice_date.strftime('%Y-%m-%d'),
+    'posting_time': "01:00:00",
+    'payment_terms_template': doc.invoice_payment_term_id.name,
+    'items': [
+    {
+        'item_code': l.product_id.name,
+        'description': l.name,
+        'qty': l.quantity,
+        'uom': l.product_uom_id.name,
+        'rate': l.price_unit,
+    } for l in doc.invoice_line_ids
+    ],
+    'taxes_and_charges': doc.invoice_line_ids.tax_ids and doc.invoice_line_ids.tax_ids.name or '',
+    'terms': doc.narration and doc.narration.replace('\n', '&lt;br&gt;') or '',
+} for doc in records]
+# Push to server
+action = env['push.to.frappe'].push(target_doctype, target_docs, push_file=True)
+        </field>
+    </record>
+
 </odoo>
