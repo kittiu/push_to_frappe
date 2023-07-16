@@ -11,7 +11,9 @@
         "account",
     ],
     "data": [
+        "security/ir.model.access.csv",
         "data/server_actions.xml",
+        "views/push_to_frappe_views.xml",
     ],
     "installable": True,
 }

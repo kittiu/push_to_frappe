@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!--
+  Copyright 2023 Ecosoft Co., Ltd.
+  License LGPL-3.0 or later (https://www.gnu.org/licenses/lgpl.html).-->
+<odoo>
+    <record id="view_push_to_frappe_filter" model="ir.ui.view">
+        <field name="name">view.push.to.frappe.filter</field>
+        <field name="model">push.to.frappe</field>
+        <field name="arch" type="xml">
+            <search string="Push to Frappe">
+                <field name="name" string="Lead" filter_domain="['|','|', ('odoo_ref', 'ilike', self), ('frappe_ref', 'ilike', self), ('name', 'ilike', self)]"/>
+                <separator />
+                <filter string="Pass"
+                        name="pass"
+                        domain="[('status', '=', 'pass')]"/>
+                <filter string="Failed"
+                        name="failed"
+                        domain="[('status', '=', 'fail')]"/>
+                <group expand="0" string="Group By">
+                    <filter string="Run Batch" name="group_by_batch" context="{'group_by':'name'}"/>
+                    <filter string="Pass/Failed" name="group_by_status" context="{'group_by':'status'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+    <record id="view_push_to_frappe_tree" model="ir.ui.view">
+        <field name="model">push.to.frappe</field>
+        <field name="arch" type="xml">
+            <tree string="Push to Frappe" expand="1">
+                <field name="name" />
+                <field name="odoo_ref" />
+                <field name="frappe_ref" />
+                <field name="status" />
+                <field name="message" />
+            </tree>
+        </field>
+    </record>
+    <record id="action_push_to_frappe" model="ir.actions.act_window">
+        <field name="name">Push to Frappe Logs</field>
+        <field name="type">ir.actions.act_window</field>
+        <field name="res_model">push.to.frappe</field>
+        <field name="view_mode">tree</field>
+        <field name="help" type="html">
+            <p class="oe_view_nocontent_create">
+                This window shows history log of Push to Frappe.
+            </p>
+        </field>
+    </record>
+    <menuitem
+        id="menu_push_to_frappe"
+        name="Push To Frappe"
+        parent="base.menu_custom"
+        sequence="140"
+    />
+    <menuitem
+        id="menu_push_to_frappe_log"
+        parent="menu_push_to_frappe"
+        action="action_push_to_frappe"
+        sequence="10"
+    />
+</odoo>

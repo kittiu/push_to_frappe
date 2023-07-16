@@ -2,16 +2,46 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl.html).
 import requests
 import json
-from odoo import _, api, models
+from datetime import datetime
+from odoo import _, api, fields, models
 from odoo.exceptions import ValidationError
 
 
-class PushToFrappe(models.AbstractModel):
+class PushToFrappe(models.Model):
     _name = "push.to.frappe"
+    _description = "Push to Frappe"
+    _order = "create_date desc"
+
+    name = fields.Char(
+        string="Run Time",
+        index=True,
+        readonly=True,
+    )
+    odoo_ref = fields.Char(
+        string="Odoo Document",
+        readonly=True,
+    )
+    frappe_ref = fields.Html(
+        string="Frappe Document",
+        readonly=True,
+    )
+    status = fields.Selection(
+        [("pass", "Passed"), ("fail", "Failed")],
+    )
+    message = fields.Text()
+
+    @api.model
+    def _prep_doc(self, doc):
+        if doc.get("odoo_ref"):
+            (odoo_model, odoo_id, odoo_ref) = doc["odoo_ref"].split(",")
+            doc.update({"odoo_ref": odoo_ref, "odoo_model": odoo_model,
+                        "odoo_id": odoo_id, "custom_odoo_ref": odoo_ref})
+            return doc
+        else:
+            raise ValidationError(_("Odoo Ref required, please check data map in server action"))
 
     @api.model
     def push(self, target_doctype, target_docs, push_comment=True, push_file=False):
-        # Connection to Frappe``
         auth_token = self.env["ir.config_parameter"].sudo().get_param("frappe.auth.token")
         server_url = self.env["ir.config_parameter"].sudo().get_param("frappe.server.url")
         if not auth_token or not server_url:
@@ -20,55 +50,60 @@ class PushToFrappe(models.AbstractModel):
                   "System parameters frappe.server.url, frappe.auth.token not found")
             )
         headers = {"Authorization": "token %s" % auth_token}
-        frappe_docs = self._create_frappe_docs(
-            headers, server_url, target_doctype, target_docs, push_comment, push_file
-        )
+        run_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        for doc in target_docs:
+            doc = self._prep_doc(doc)
+            try:
+                frappe_doc = self._create_frappe_docs(
+                    headers, server_url, target_doctype, doc, push_comment, push_file
+                )
+                self.sudo().create({
+                    "name": run_datetime,
+                    "odoo_ref": doc["odoo_ref"],
+                    "frappe_ref": (
+                        "<a href='%s/app/%s/%s' target='_blank' rel='noopener noreferrer'>%s</a>"
+                        % (server_url, target_doctype.replace(" ", "-").lower(), frappe_doc[1], frappe_doc[1])
+                    ),
+                    "status": "pass",
+                })
+                self._cr.commit()
+            except Exception as e:
+                self.sudo().create({
+                    "name": run_datetime,
+                    "odoo_ref": doc["odoo_ref"],
+                    "frappe_ref": False,
+                    "status": "fail",
+                    "message": str(e),
+                })
+                self._cr.commit()
         return {
-            'type': 'ir.actions.client',
-            'tag': 'display_notification',
-            'params': {
-                'type': 'success',
-                'sticky': True,
-                'title': _("Data pushed to %s") % server_url,
-                'message': "<br>".join([
-                    "%s ⇌ <a href='%s/app/%s/%s' target='_blank' rel='noopener noreferrer'>%s</a>" %
-                    (x[0], server_url, target_doctype.replace(" ", "-").lower(), x[1], x[1])
-                    for x in frappe_docs
-                ]),
-            }
+            "name": _("Push to Frappe Results"),
+            "view_mode": "tree",
+            "res_model": "push.to.frappe",
+            "type": "ir.actions.act_window",
+            "context": {"search_default_group_by_status": 1},
+            "domain": [("name", "=", run_datetime)],
         }
 
     @api.model
-    def _create_frappe_docs(self, headers, server_url, target_doctype, target_docs, push_comment, push_file):
-        frappe_docs = []
-        for doc in target_docs:
-            (odoo_model, odoo_id, odoo_ref) = (False, False, False)
-            if doc.get("odoo_ref"):
-                (odoo_model, odoo_id, odoo_ref) = doc["odoo_ref"].split(",")
-                doc.update({"odoo_ref": odoo_ref, "custom_odoo_ref": odoo_ref})
-            else:
-                raise ValidationError(_("Odoo Ref required, please check data map in server action"))
-            # Create frappe document
-            res_json = requests.post(
-                url="%s/api/resource/%s" % (server_url, target_doctype),
-                json={
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                },
-                headers=headers,
-                data=json.dumps(doc)
-            ).json()
-            if not res_json.get("data"):
-                raise ValidationError(res_json.get("_server_messages", res_json.get("exception")))
-            frappe_doc = res_json['data']['name']
-            frappe_docs.append((odoo_ref or "-", frappe_doc))
-            # Push files
-            if push_file:
-                self._push_file(headers, server_url, odoo_model, odoo_id, target_doctype, frappe_doc)
-            # Push comments
-            if push_comment:
-                self._push_comment(headers, server_url, odoo_model, odoo_id, target_doctype, frappe_doc)
-        return frappe_docs
+    def _create_frappe_docs(self, headers, server_url, target_doctype, doc, push_comment, push_file):
+        res_json = requests.post(
+            url="%s/api/resource/%s" % (server_url, target_doctype),
+            json={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            headers=headers,
+            data=json.dumps(doc)
+        ).json()
+        if not res_json.get("data"):
+            raise ValidationError(res_json.get("_server_messages", res_json.get("exception")))
+        frappe_doc = res_json['data']['name']
+        if push_file:
+            self._push_file(headers, server_url, doc["odoo_model"], doc["odoo_id"], target_doctype, frappe_doc)
+        if push_comment:
+            self._push_comment(headers, server_url, doc["odoo_model"], doc["odoo_id"], target_doctype, frappe_doc)
+        return (doc["odoo_ref"] or "-", frappe_doc)
 
     @api.model
     def _push_comment(self, headers, server_url, odoo_model, odoo_id, target_doctype, frappe_doc):
