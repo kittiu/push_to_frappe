@@ -31,6 +31,7 @@
                 <field name="odoo_ref" />
                 <field name="frappe_ref" />
                 <field name="status" />
+                <field name="data" />
                 <field name="message" />
             </tree>
         </field>

@@ -28,6 +28,7 @@ class PushToFrappe(models.Model):
     status = fields.Selection(
         [("pass", "Passed"), ("fail", "Failed")],
     )
+    data = fields.Text()
     message = fields.Text()
 
     @api.model
@@ -50,7 +51,8 @@ class PushToFrappe(models.Model):
                   "System parameters frappe.server.url, frappe.auth.token not found")
             )
         headers = {"Authorization": "token %s" % auth_token}
-        run_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        run_datetime = fields.Datetime.context_timestamp(
+            self, datetime.now()).strftime("%Y-%m-%d %H:%M:%S")
         for doc in target_docs:
             doc = self._prep_doc(doc)
             try:
@@ -71,8 +73,8 @@ class PushToFrappe(models.Model):
                 self.sudo().create({
                     "name": run_datetime,
                     "odoo_ref": doc["odoo_ref"],
-                    "frappe_ref": False,
                     "status": "fail",
+                    "data": doc,
                     "message": str(e),
                 })
                 self._cr.commit()

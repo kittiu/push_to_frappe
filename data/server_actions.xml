@@ -8,25 +8,25 @@
         <field name="code">
 target_doctype = 'Sales Order'
 
-# Create term and conditions for all docs
+# Create term and conditions
 notes = {}
 for doc in records:
-    note = '\n'.join(doc.order_line.filtered("display_type").mapped("name"))  # ["x", "y"]
+    note = '\n'.join(doc.order_line.filtered("display_type").mapped("name"))
     notes.update({doc.id: note})
 
 target_docs = [{
     'odoo_ref': '%s,%s,%s' % (doc._name, doc.id, doc.name),  # Required
     'customer': doc.partner_id.name,
     'transaction_date': doc.date_order.strftime('%Y-%m-%d'),
-    'delivery_date': doc.commitment_date and doc.commitment_date.strftime('%Y-%m-%d') or doc.date_order.strftime('%Y-%m-%d'),
+    'delivery_date': doc.date_order.strftime('%Y-%m-%d'),
     'payment_terms_template': doc.payment_term_id.name,
     'items': [
-    {
-        'item_code': l.product_id.name,
-        'description': l.name,
-        'qty': l.product_uom_qty,
-        'rate': l.price_unit
-    } for l in doc.order_line.filtered(lambda l: not l.display_type)
+        {
+            'item_code': l.product_id.name,
+            'description': l.name,
+            'qty': l.product_uom_qty,
+            'rate': l.price_unit
+        } for l in doc.order_line.filtered(lambda l: not l.display_type)
     ],
     'taxes_and_charges': doc.order_line.tax_id and doc.order_line.tax_id.name or '',
     'terms': notes[doc.id]+doc.note and (notes[doc.id]+doc.note).replace('\n', '&lt;br&gt;') or '',
@@ -36,7 +36,6 @@ action = env['push.to.frappe'].push(target_doctype, target_docs, push_file=False
         </field>
     </record>
 
-
     <record id="action_push_cust_invoice_to_frappe" model="ir.actions.server">
         <field name="name">Send Cust Invoice to Frappe Server</field>
         <field name="model_id" ref="account.model_account_move"/>
@@ -44,12 +43,22 @@ action = env['push.to.frappe'].push(target_doctype, target_docs, push_file=False
         <field name="state">code</field>
         <field name="code">
 target_doctype = 'Sales Invoice'
+
+# Create term and conditions
+notes = {}
+for doc in records:
+    note = '\n'.join(doc.invoice_line_ids.filtered("display_type").mapped("name"))
+    notes.update({doc.id: note})
+
 target_docs = [{
     'odoo_ref': '%s,%s,%s' % (doc._name, doc.id, doc.name),  # Required
     'customer': doc.partner_id.name,
-    'date': doc.invoice_date.strftime('%Y-%m-%d'),
+    'debit_to': doc.partner_id.property_account_receivable_id.display_name,
+    'posting_date': doc.invoice_date.strftime('%Y-%m-%d'),
+    'set_posting_time': 1,
     'posting_time': "01:00:00",
     'payment_terms_template': doc.invoice_payment_term_id.name,
+    'tax_id': doc.partner_id.vat,
     'items': [
     {
         'item_code': l.product_id.name,
@@ -57,14 +66,16 @@ target_docs = [{
         'qty': l.quantity,
         'uom': l.product_uom_id.name,
         'rate': l.price_unit,
-    } for l in doc.invoice_line_ids
+        'income_account': l.account_id.display_name,
+        'cost_center': l.analytic_account_id.name,
+        'sales_order': l.sale_line_ids.order_id.name,
+    } for l in doc.invoice_line_ids.filtered(lambda l: not l.display_type)
     ],
     'taxes_and_charges': doc.invoice_line_ids.tax_ids and doc.invoice_line_ids.tax_ids.name or '',
-    'terms': doc.narration and doc.narration.replace('\n', '&lt;br&gt;') or '',
+    'terms': notes[doc.id]+doc.narration and (notes[doc.id]+doc.narration).replace('\n', '&lt;br&gt;') or '',
 } for doc in records]
-# Push to server
+
 action = env['push.to.frappe'].push(target_doctype, target_docs, push_file=True)
         </field>
     </record>
-
 </odoo>
