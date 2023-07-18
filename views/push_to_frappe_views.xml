@@ -18,6 +18,7 @@
                         domain="[('status', '=', 'fail')]"/>
                 <group expand="0" string="Group By">
                     <filter string="Run Batch" name="group_by_batch" context="{'group_by':'name'}"/>
+                    <filter string="Frappe Doctype" name="group_by_doctype" context="{'group_by':'frappe_doctype'}"/>
                     <filter string="Pass/Failed" name="group_by_status" context="{'group_by':'status'}"/>
                 </group>
             </search>
@@ -29,6 +30,7 @@
             <tree string="Push to Frappe" expand="1">
                 <field name="name" />
                 <field name="odoo_ref" />
+                <field name="frappe_doctype"/>
                 <field name="frappe_ref" />
                 <field name="status" />
                 <field name="data" />

@@ -15,7 +15,7 @@ for doc in records:
     notes.update({doc.id: note})
 
 target_docs = [{
-    'odoo_ref': '%s,%s,%s' % (doc._name, doc.id, doc.name),  # Required
+    'odoo_ref': '%s|%s|%s' % (doc._name, doc.id, doc.name),  # Required
     'customer': doc.partner_id.name,
     'transaction_date': doc.date_order.strftime('%Y-%m-%d'),
     'delivery_date': doc.date_order.strftime('%Y-%m-%d'),
@@ -51,7 +51,7 @@ for doc in records:
     notes.update({doc.id: note})
 
 target_docs = [{
-    'odoo_ref': '%s,%s,%s' % (doc._name, doc.id, doc.name),  # Required
+    'odoo_ref': '%s|%s|%s' % (doc._name, doc.id, doc.name),  # Required
     'customer': doc.partner_id.name,
     'debit_to': doc.partner_id.property_account_receivable_id.display_name,
     'posting_date': doc.invoice_date.strftime('%Y-%m-%d'),
@@ -76,6 +76,124 @@ target_docs = [{
 } for doc in records]
 
 action = env['push.to.frappe'].push(target_doctype, target_docs, push_file=True)
+        </field>
+    </record>
+
+    <record id="action_push_supplier_addr_contact_to_frappe" model="ir.actions.server">
+        <field name="name">Send Supplier-Address-Contact to Frappe</field>
+        <field name="model_id" ref="base.model_res_partner"/>
+        <field name="binding_model_id" ref="base.model_res_partner"/>
+        <field name="state">code</field>
+        <field name="code">
+# Supplier
+suppliers = [{
+  'odoo_ref': '%s|%s|%s' % (doc._name, doc.id, doc.name),  # Required
+  'name': doc.name,
+  'supplier_name': doc.name,
+  'supplier_type': 'Company',
+  'supplier_group': 'All Supplier Groups',
+  'territory': 'Thailand',
+  'tax_id': doc.vat,
+  'branch_cde': doc.branch,
+  'website': doc.website
+} for doc in records]
+
+# Address
+addresses = [{
+  'odoo_ref': '%s|%s|%s' % (doc._name, doc.id, doc.name),  # Required
+  'address_title': doc.name,
+  'address_line1': doc.street or '-',
+  'address_line2': doc.street2,
+  'city': doc.city or '-',
+  'country': 'Thailand',
+  'pincode': doc.zip,
+  'email_address': doc.email,
+  'links': [{
+    'link_doctype': 'Supplier',
+    'link_name': doc.name
+  }]
+} for doc in records]
+
+# Contact
+contacts = [{
+  'odoo_ref': '%s|%s|%s' % (contact._name, contact.id, contact.name),  # Required
+  'first_name': contact.name,
+  'company_name': contact.parent_id.name,
+  'designation': contact.function,
+  'email_ids': contact.email and [{
+    'email_id': contact.email
+  }] or [],
+  'phone_nos': (contact.phone or contact.mobile) and [{
+    'phone': ','.join(filter(lambda x: x, [contact.phone, contact.mobile]))
+  }] or [],
+  'links': [{
+    'link_doctype': 'Supplier',
+    'link_name': contact.parent_id.name
+  }]
+} for contact in records.mapped("child_ids")]
+
+res = env['push.to.frappe'].push('Supplier', suppliers, push_file=False, log_ids=[])
+res = env['push.to.frappe'].push('Address', addresses, push_file=False, log_ids=res['log_ids'])
+action = env['push.to.frappe'].push('Contact', contacts, push_file=False, log_ids=res['log_ids'])
+        </field>
+    </record>
+
+    <record id="action_push_cust_addr_contact_to_frappe" model="ir.actions.server">
+        <field name="name">Send Customer-Address-Contact to Frappe</field>
+        <field name="model_id" ref="base.model_res_partner"/>
+        <field name="binding_model_id" ref="base.model_res_partner"/>
+        <field name="state">code</field>
+        <field name="code">
+# Customer
+customers = [{
+    'odoo_ref': '%s|%s|%s' % (doc._name, doc.id, doc.name),  # Required
+    'name': doc.name,
+    'customer_name': doc.name,
+    'customer_type': 'Company',
+    'customer_group': 'Commercial',
+    'territory': 'Thailand',
+    'tax_id': doc.vat,
+    'branch_cde': doc.branch,
+    'website': doc.website
+} for doc in records]
+
+# Address
+addresses = [{
+    'odoo_ref': '%s|%s|%s' % (doc._name, doc.id, doc.name),  # Required
+    'address_title': doc.name,
+    'address_line1': doc.street,
+    'address_line2': doc.street2,
+    'city': doc.city,
+    'country': 'Thailand',
+    'pincode': doc.zip,
+    'email_address': doc.email,
+    'links': [{
+    'link_doctype': 'Customer',
+    'link_name': doc.name
+    }]
+} for doc in records]
+
+# Contact
+contacts = [{
+    'odoo_ref': '%s|%s|%s' % (contact._name, contact.id, contact.name),  # Required
+    'first_name': contact.name,
+    'company_name': contact.parent_id.name,
+    'designation': contact.function,
+    'email_ids': contact.email and [{
+    'email_id': contact.email
+    }] or [],
+    'phone_nos': (contact.phone or contact.mobile) and [{
+    'phone': ','.join(filter(lambda x: x, [contact.phone, contact.mobile]))
+    }] or [],
+    'links': [{
+    'link_doctype': 'Customer',
+    'link_name': contact.parent_id.name
+    }]
+} for contact in records.mapped("child_ids")]
+
+res = env['push.to.frappe'].push('Customer', customers, push_file=False, log_ids=[])
+res = env['push.to.frappe'].push('Address', addresses, push_file=False, log_ids=res["log_ids"])
+action = env['push.to.frappe'].push('Contact', contacts, push_file=False, log_ids=res["log_ids"])
         </field>
     </record>
 </odoo>

@@ -21,6 +21,10 @@ class PushToFrappe(models.Model):
         string="Odoo Document",
         readonly=True,
     )
+    frappe_doctype = fields.Char(
+        string="Frappe Doctype",
+        readonly=True,
+    )
     frappe_ref = fields.Html(
         string="Frappe Document",
         readonly=True,
@@ -34,7 +38,7 @@ class PushToFrappe(models.Model):
     @api.model
     def _prep_doc(self, doc):
         if doc.get("odoo_ref"):
-            (odoo_model, odoo_id, odoo_ref) = doc["odoo_ref"].split(",")
+            (odoo_model, odoo_id, odoo_ref) = doc["odoo_ref"].split("|")
             doc.update({"odoo_ref": odoo_ref, "odoo_model": odoo_model,
                         "odoo_id": odoo_id, "custom_odoo_ref": odoo_ref})
             return doc
@@ -42,7 +46,7 @@ class PushToFrappe(models.Model):
             raise ValidationError(_("Odoo Ref required, please check data map in server action"))
 
     @api.model
-    def push(self, target_doctype, target_docs, push_comment=True, push_file=False):
+    def push(self, target_doctype, target_docs, push_comment=True, push_file=False, log_ids=[]):
         auth_token = self.env["ir.config_parameter"].sudo().get_param("frappe.auth.token")
         server_url = self.env["ir.config_parameter"].sudo().get_param("frappe.server.url")
         if not auth_token or not server_url:
@@ -59,24 +63,28 @@ class PushToFrappe(models.Model):
                 frappe_doc = self._create_frappe_docs(
                     headers, server_url, target_doctype, doc, push_comment, push_file
                 )
-                self.sudo().create({
+                log = self.sudo().create({
                     "name": run_datetime,
                     "odoo_ref": doc["odoo_ref"],
+                    "frappe_doctype": target_doctype,
                     "frappe_ref": (
                         "<a href='%s/app/%s/%s' target='_blank' rel='noopener noreferrer'>%s</a>"
                         % (server_url, target_doctype.replace(" ", "-").lower(), frappe_doc[1], frappe_doc[1])
                     ),
                     "status": "pass",
                 })
+                log_ids.append(log.id)
                 self._cr.commit()
             except Exception as e:
-                self.sudo().create({
+                log = self.sudo().create({
                     "name": run_datetime,
                     "odoo_ref": doc["odoo_ref"],
+                    "frappe_doctype": target_doctype,
                     "status": "fail",
                     "data": doc,
                     "message": str(e),
                 })
+                log_ids.append(log.id)
                 self._cr.commit()
         return {
             "name": _("Push to Frappe Results"),
@@ -84,7 +92,8 @@ class PushToFrappe(models.Model):
             "res_model": "push.to.frappe",
             "type": "ir.actions.act_window",
             "context": {"search_default_group_by_status": 1},
-            "domain": [("name", "=", run_datetime)],
+            "domain": [("id", "in", log_ids)],
+            "log_ids": log_ids
         }
 
     @api.model
