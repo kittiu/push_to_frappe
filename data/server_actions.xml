@@ -15,7 +15,7 @@ for doc in records:
     notes.update({doc.id: note})
 
 target_docs = [{
-    'odoo_ref': '%s,%s,%s' % (doc._name, doc.id, doc.name),  # Required
+    'odoo_ref': '%s|%s|%s' % (doc._name, doc.id, doc.name),  # Required
     'customer': doc.partner_id.name,
     'transaction_date': doc.date_order.strftime('%Y-%m-%d'),
     'delivery_date': doc.date_order.strftime('%Y-%m-%d'),
@@ -29,7 +29,7 @@ target_docs = [{
         } for l in doc.order_line.filtered(lambda l: not l.display_type)
     ],
     'taxes_and_charges': doc.order_line.tax_id and doc.order_line.tax_id.name or '',
-    'terms': notes[doc.id]+doc.note and (notes[doc.id]+doc.note).replace('\n', '<br>') or '',
+    'terms': notes[doc.id]+doc.note and (notes[doc.id]+doc.note).replace('\n', '&lt;br&gt;') or '',
 } for doc in records]
 
 action = env['push.to.frappe'].push(target_doctype, target_docs, push_file=False, log_ids=[])
@@ -66,7 +66,7 @@ target_docs = [{
         } for l in doc.order_line.filtered(lambda l: not l.display_type)
     ],
     'taxes_and_charges': doc.order_line.taxes_id and doc.order_line.taxes_id.name or '',
-    'terms': notes[doc.id]+(doc.notes or '') and (notes[doc.id]+(doc.notes or '')).replace('\n', '<br>') or '',
+    'terms': notes[doc.id]+(doc.notes or '') and (notes[doc.id]+(doc.notes or '')).replace('\n', '&lt;br&gt;') or '',
     'disable_rounded_total': 1
 } for doc in records]
 
@@ -89,7 +89,7 @@ for doc in records:
     notes.update({doc.id: note})
 
 target_docs = [{
-    'odoo_ref': '%s,%s,%s' % (doc._name, doc.id, doc.name),  # Required
+    'odoo_ref': '%s|%s|%s' % (doc._name, doc.id, doc.name),  # Required
     'customer': doc.partner_id.name,
     'debit_to': doc.partner_id.property_account_receivable_id.display_name,
     'posting_date': doc.invoice_date.strftime('%Y-%m-%d'),
@@ -111,10 +111,10 @@ target_docs = [{
     } for l in doc.invoice_line_ids.filtered(lambda l: not l.display_type)
     ],
     'taxes_and_charges': doc.invoice_line_ids.tax_ids and doc.invoice_line_ids.tax_ids.name or '',
-    'terms': notes[doc.id]+doc.narration and (notes[doc.id]+doc.narration).replace('\n', '<br>') or '',
+    'terms': notes[doc.id]+doc.narration and (notes[doc.id]+doc.narration).replace('\n', '&lt;br&gt;') or '',
 } for doc in records]
 
-action = env['push.to.frappe'].push(target_doctype, target_docs, push_file=True)
+action = env['push.to.frappe'].push(target_doctype, target_docs, push_file=True, log_ids=[])
         </field>
     </record>
 
@@ -155,7 +155,7 @@ target_docs = [{
     } for l in doc.invoice_line_ids.filtered(lambda l: not l.display_type)
     ],
     'taxes_and_charges': doc.invoice_line_ids.tax_ids and doc.invoice_line_ids.tax_ids.name or '',
-    'terms': notes[doc.id]+(doc.narration or '') and (notes[doc.id]+(doc.narration or '')).replace('\n', '<br>') or '',
+    'terms': notes[doc.id]+(doc.narration or '') and (notes[doc.id]+(doc.narration or '')).replace('\n', '&lt;br&gt;') or '',
     'disable_rounded_total': 1
 } for doc in records]
 
@@ -279,6 +279,39 @@ contacts = [{
 res = env['push.to.frappe'].push('Customer', customers, push_file=False, log_ids=[])
 res = env['push.to.frappe'].push('Address', addresses, push_file=False, log_ids=res["log_ids"])
 action = env['push.to.frappe'].push('Contact', contacts, push_file=False, log_ids=res["log_ids"])
+        </field>
+    </record>
+
+    <record id="action_push_cust_payment_to_frappe" model="ir.actions.server">
+        <field name="name">Send Customer Payment to Frappe</field>
+        <field name="model_id" ref="account.model_account_payment"/>
+        <field name="binding_model_id" ref="account.model_account_payment"/>
+        <field name="state">code</field>
+        <field name="code">
+target_doctype = 'Payment Entry'
+
+target_docs = [{
+    'odoo_ref': '%s|%s|%s' % (doc._name, doc.id, doc.name),  # Required
+    'payment_type': 'Receive',
+    'posting_date': doc.payment_date.strftime('%Y-%m-%d'),
+    'mode_of_payment': doc.journal_id.display_name,
+    'party_type': 'Customer',
+    'party': doc.partner_id.name,
+    'paid_amount': doc.amount,
+    'received_amount': doc.amount,
+    'paid_to': doc.journal_id.default_debit_account_id.display_name,
+    'account_currency_to': 'THB',
+    'references': [{
+      'reference_doctype': 'Sales Invoice',
+      'reference_name': inv.name,
+      'allocated_amount': inv.amount_total
+    } for inv in doc.invoice_ids],
+    'reference_no': doc.communication,
+    'reference_date': doc.payment_date.strftime('%Y-%m-%d'),
+    'target_exchange_rate': 1,
+} for doc in records]
+
+action = env['push.to.frappe'].push(target_doctype, target_docs, push_file=False, log_ids=[])
         </field>
     </record>
 </odoo>
