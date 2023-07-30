@@ -95,7 +95,7 @@ target_docs = [{
     'posting_date': doc.invoice_date.strftime('%Y-%m-%d'),
     'set_posting_time': 1,
     'posting_time': "01:00:00",
-    'payment_terms_template': doc.invoice_payment_term_id.name,
+    'payment_terms_template': doc.invoice_payment_term_id.name or '',
     'tax_id': doc.partner_id.vat,
     'items': [
     {
@@ -106,13 +106,13 @@ target_docs = [{
         'uom': l.product_uom_id.name,
         'rate': l.price_unit,
         'income_account': l.account_id.display_name,
-        'cost_center': l.analytic_account_id.name or '',
+        'cost_center': 'Main - EC',
         'sales_order': l.sale_line_ids.order_id.name or '',
     } for l in doc.invoice_line_ids.filtered(lambda l: not l.display_type)
     ],
     'taxes_and_charges': doc.invoice_line_ids.tax_ids and doc.invoice_line_ids.tax_ids.name or '',
-    'terms': notes[doc.id]+doc.narration and (notes[doc.id]+doc.narration).replace('\n', '&lt;br&gt;') or '',
-} for doc in records]
+    'terms': notes[doc.id]+(doc.narration or '') and (notes[doc.id]+(doc.narration or '')).replace('\n', '&lt;br&gt;') or '',
+    } for doc in records]
 
 action = env['push.to.frappe'].push(target_doctype, target_docs, push_file=True, log_ids=[])
         </field>
@@ -141,6 +141,8 @@ target_docs = [{
     'posting_time': "01:00:00",
     'payment_terms_template': doc.invoice_payment_term_id.name or '',
     'tax_id': doc.partner_id.vat,
+    'tax_invoice_number': doc.tax_invoice_ids and doc.tax_invoice_ids.tax_invoice_number or '',
+    'tax_invoice_date': doc.tax_invoice_ids and doc.tax_invoice_ids.tax_invoice_date.strftime('%Y-%m-%d') or '',
     'items': [
     {
         'item_code': l.product_id.name or '',
@@ -150,7 +152,7 @@ target_docs = [{
         'uom': l.product_uom_id.name,
         'rate': l.price_unit,
         'expense_account': l.account_id.display_name,
-        'cost_center': l.analytic_account_id.name or '',
+        'cost_center': 'Main - EC',
         'purchase_order': l.purchase_line_id.order_id.name or '',
     } for l in doc.invoice_line_ids.filtered(lambda l: not l.display_type)
     ],
@@ -300,15 +302,99 @@ target_docs = [{
     'paid_amount': doc.amount,
     'received_amount': doc.amount,
     'paid_to': doc.journal_id.default_debit_account_id.display_name,
+    'paid_from': doc.partner_id.property_account_receivable_id.display_name,
     'account_currency_to': 'THB',
     'references': [{
-      'reference_doctype': 'Sales Invoice',
-      'reference_name': inv.name,
-      'allocated_amount': inv.amount_total
+        'reference_doctype': 'Sales Invoice',
+        'reference_name': inv.name,
+        'allocated_amount': inv.amount_total
     } for inv in doc.invoice_ids],
     'reference_no': doc.communication,
     'reference_date': doc.payment_date.strftime('%Y-%m-%d'),
     'target_exchange_rate': 1,
+    'deductions': [{
+        'account': ml.account_id.display_name,
+        'amount': ml.debit - ml.credit,
+        'cost_center': 'Main - EC',
+    } for ml in doc.move_id.line_ids.filtered(lambda l: l.account_id.display_name == '119300 - Prepaid Withholding tax - EC')]
+} for doc in records]
+
+action = env['push.to.frappe'].push(target_doctype, target_docs, push_file=False, log_ids=[])
+        </field>
+    </record>
+
+    <record id="action_push_sup_payment_to_frappe" model="ir.actions.server">
+        <field name="name">Send Supplier Payment to Frappe</field>
+        <field name="model_id" ref="account.model_account_payment"/>
+        <field name="binding_model_id" ref="account.model_account_payment"/>
+        <field name="state">code</field>
+        <field name="code">
+target_doctype = 'Payment Entry'
+
+target_docs = [{
+    'odoo_ref': '%s|%s|%s' % (doc._name, doc.id, doc.name),  # Required
+    'payment_type': 'Pay',
+    'posting_date': doc.payment_date.strftime('%Y-%m-%d'),
+    'mode_of_payment': doc.journal_id.display_name,
+    'party_type': 'Supplier',
+    'party': doc.partner_id.name,
+    'paid_amount': doc.amount,
+    'received_amount': doc.amount,
+    'paid_to': doc.partner_id.property_account_payable_id.display_name,
+    'paid_from': doc.journal_id.default_credit_account_id.display_name,
+    'account_currency_to': 'THB',
+    'tax_invoice_number': doc.tax_invoice_ids and doc.tax_invoice_ids.tax_invoice_number or '',
+    'tax_invoice_date': doc.tax_invoice_ids and doc.tax_invoice_ids.tax_invoice_date.strftime('%Y-%m-%d') or '',
+    'has_purchase_tax_invoice': doc.tax_invoice_ids and 1 or 0,
+    'references': [{
+        'reference_doctype': 'Purchase Invoice',
+        'reference_name': inv.name,
+        'allocated_amount': inv.amount_total
+    } for inv in doc.invoice_ids],
+    'reference_no': doc.communication,
+    'reference_date': doc.payment_date.strftime('%Y-%m-%d'),
+    'source_exchange_rate': 1,
+    'target_exchange_rate': 1,
+    'deductions': [{
+        'account': ml.account_id.display_name,
+        'amount': ml.debit - ml.credit,
+        'cost_center': 'Main - EC',
+    } for ml in doc.move_id.line_ids.filtered(lambda l: l.account_id.display_name == '219300 - Withholding Tax Payable - EC')]
+} for doc in records]
+
+action = env['push.to.frappe'].push(target_doctype, target_docs, push_file=False, log_ids=[])
+        </field>
+    </record>
+
+    <record id="action_push_je_to_frappe" model="ir.actions.server">
+        <field name="name">Send JE to Frappe</field>
+        <field name="model_id" ref="account.model_account_move"/>
+        <field name="binding_model_id" ref="account.model_account_move"/>
+        <field name="state">code</field>
+        <field name="code">
+target_doctype = 'Journal Entry'
+
+target_docs = [{
+    'odoo_ref': '%s|%s|%s' % (doc._name, doc.id, doc.name),  # Required
+    'voucher_type': 'Journal Entry',
+    'posting_date': doc.date.strftime('%Y-%m-%d'),
+    'company_tax_address': doc.tax_invoice_ids and 'Ecosoft-Address-Billing' or '',
+    'accounts': [{
+        'account': ml.account_id.display_name,
+        'party_type': ml.account_id.user_type_id.name == 'Receivable' and 'Customer' or (ml.account_id.user_type_id.name == 'Payable' and 'Supplier' or ''),
+        'party': ml.account_id.user_type_id.name in ('Receivable', 'Payable') and ml.partner_id.name or '',
+        'debit': ml.debit,
+        'debit_in_account_currency': ml.debit,
+        'credit': ml.credit,
+        'credit_in_account_currency': ml.credit,
+        'user_remark': '\n'.join(list(filter(lambda l: l, [ml.name, ml.partner_id.name or False]))),
+        'exchange_rate': 1,
+        'tax_invoice_number': ml.tax_invoice_ids and ml.tax_invoice_ids[0].tax_invoice_number or '',
+        'tax_invoice_date': ml.tax_invoice_ids and ml.tax_invoice_ids[0].tax_invoice_date and ml.tax_invoice_ids[0].tax_invoice_date.strftime('%Y-%m-%d') or '',
+        'tax_base_amount': ml.tax_invoice_ids and ml.tax_invoice_ids[0].tax_base_amount or 0,
+        'supplier': ml.tax_invoice_ids and ml.tax_invoice_ids[0].partner_id.name or '',
+    } for ml in doc.line_ids],
+    'user_remark': doc.narration,
 } for doc in records]
 
 action = env['push.to.frappe'].push(target_doctype, target_docs, push_file=False, log_ids=[])
